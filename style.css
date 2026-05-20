@@ -116,10 +116,19 @@ body {
 }
 
 /* ── Debug page ───────────────────── */
+.debug-toolbar {
+  display: flex; align-items: center; gap: 6px; padding: 5px 10px;
+  background: #0e0e1a; border-bottom: 1px solid #1a1a30; flex-shrink: 0;
+  flex-wrap: wrap; font-size: 0.75rem;
+}
+.debug-toolbar .label { color: #777; white-space: nowrap; }
+#simInput {
+  background: #1a1a2e; border: 1px solid #2a2a44; color: #ddd;
+  padding: 3px 6px; border-radius: 4px; font-family: 'Consolas', monospace;
+  font-size: 0.72rem; flex: 1; min-width: 120px; text-transform: uppercase;
+}
 .debug-text {
-  color: #aaa;
-  font-size: 0.75rem;
-  line-height: 1.3;
+  color: #aaa; font-size: 0.75rem; line-height: 1.3; flex: 1;
 }
 .debug-text .time { color: #555; }
 .debug-text .hex  { color: #5dade2; }

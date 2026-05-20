@@ -21,6 +21,9 @@ const tailInput     = document.getElementById('tailInput');
 const applyBtn      = document.getElementById('applyBtn');
 const scanBtn       = document.getElementById('scanBtn');
 const disconnectBtn = document.getElementById('disconnectBtn');
+const simInput       = document.getElementById('simInput');
+const simSendBtn     = document.getElementById('simSendBtn');
+const simClearBtn    = document.getElementById('simClearBtn');
 
 // ═══════════════════════════════════════════════════
 // Settings
@@ -181,6 +184,26 @@ disconnectBtn.addEventListener('click', async function() {
     try { await server.disconnect(); } catch (_) {}
   }
   onDisconnect();
+});
+
+// Simulator: send hex bytes as if from BLE
+simSendBtn.addEventListener('click', function() {
+  var bytes = hexStrToBytes(simInput.value.trim());
+  if (bytes.length === 0) return;
+  debugLog('=== 模拟发送 ' + bytes.length + ' 字节: ' + bytesToHex(bytes) + ' ===', 'info');
+  for (var i = 0; i < bytes.length; i++) {
+    parseByte(bytes[i]);
+  }
+});
+
+simClearBtn.addEventListener('click', function() {
+  debugLines = [];
+  debugDisplay.innerHTML = '';
+  // Also reset waveform
+  wavePtr = 0;
+  ctx.fillStyle = '#06060e';
+  ctx.fillRect(0, 0, waveW, waveH);
+  textDisplay.textContent = '等待数据...';
 });
 
 // ═══════════════════════════════════════════════════

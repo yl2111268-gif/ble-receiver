@@ -44,9 +44,16 @@
     <canvas id="waveCanvas"></canvas>
   </div>
 
-  <!-- Debug page: raw hex dump -->
+  <!-- Debug page: raw hex dump + simulator -->
   <div id="pageDebug" class="page">
-    <pre id="debugDisplay" class="text-full debug-text">等待 BLE 数据...</pre>
+    <div class="debug-toolbar">
+      <span class="label">模拟HEX:</span>
+      <input id="simInput" type="text" value="AA 55 02 06 22 22 22 22 22 22" spellcheck="false">
+      <button id="simSendBtn" class="btn-sm primary">发送</button>
+      <button id="simClearBtn" class="btn-sm">清空</button>
+    </div>
+    <pre id="debugDisplay" class="text-full debug-text">等待 BLE 数据...
+输入 HEX 然后点"发送"可模拟测试</pre>
   </div>
 
   <script src="app.js"></script>
