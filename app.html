@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a0a0f">
+<title>BLE 数据接收器</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: #0a0a0f; color: #ccc;
+  height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 10px; background: #12121f; border-bottom: 1px solid #1a1a30; flex-shrink: 0;
+}
+.tabs { display: flex; gap: 4px; }
+.tab {
+  background: #1e1e33; color: #888; border: none; border-radius: 6px;
+  padding: 6px 18px; font-size: 0.85rem; cursor: pointer; font-weight: 600;
+}
+.tab.active { background: #3a6fd4; color: #fff; }
+.status {
+  font-size: 0.72rem; padding: 3px 10px; border-radius: 10px; font-weight: 600;
+}
+.status.disconnected { background: #222; color: #666; }
+.status.connected    { background: #0c5; color: #000; }
+.settings {
+  display: flex; align-items: center; gap: 6px; padding: 5px 10px;
+  background: #0e0e1a; border-bottom: 1px solid #1a1a30; flex-shrink: 0;
+  flex-wrap: wrap; font-size: 0.75rem;
+}
+.settings .label { color: #777; white-space: nowrap; }
+.settings input[type="text"] {
+  background: #1a1a2e; border: 1px solid #2a2a44; color: #ddd;
+  padding: 3px 6px; border-radius: 4px; font-family: 'Consolas', monospace;
+  font-size: 0.75rem; text-transform: uppercase;
+}
+#headerInput { width: 68px; }
+#tailInput { width: 68px; }
+#textTypeInput, #waveTypeInput { width: 40px; }
+.btn-sm {
+  border: none; border-radius: 5px; padding: 4px 12px; font-size: 0.72rem;
+  cursor: pointer; font-weight: 600; background: #2a2a44; color: #bbb; white-space: nowrap;
+}
+.btn-sm:disabled { opacity: 0.4; }
+.btn-sm.primary { background: #3a6fd4; color: #fff; }
+.btn-sm.danger  { background: #c04040; color: #fff; }
+.page { flex: 1; overflow: hidden; display: none; }
+.page.active { display: flex; }
+.text-full {
+  width: 100%; height: 100%; background: #06060e; color: #0f0;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 1rem; line-height: 1.4; padding: 8px;
+  white-space: pre-wrap; word-break: break-all; border: none;
+  resize: none; overflow-y: auto; user-select: text;
+}
+#waveCanvas {
+  width: 100%; height: 100%; display: block; background: #06060e;
+  image-rendering: pixelated;
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="tabs">
+    <button id="tabText" class="tab active">文本</button>
+    <button id="tabWave" class="tab">波形</button>
+  </div>
+  <span id="status" class="status disconnected">未连接</span>
+</div>
+
+<div class="settings">
+  <span class="label">帧头:</span>
+  <input id="headerInput" type="text" value="AA 55" maxlength="12" spellcheck="false">
+  <span class="label">帧尾:</span>
+  <input id="tailInput" type="text" value="0D 0A" maxlength="12" spellcheck="false">
+  <span class="label">文本:</span>
+  <input id="textTypeInput" type="text" value="01" maxlength="2" spellcheck="false">
+  <span class="label">波形:</span>
+  <input id="waveTypeInput" type="text" value="02" maxlength="2" spellcheck="false">
+  <button id="applyBtn" class="btn-sm">应用</button>
+  <button id="scanBtn" class="btn-sm primary">扫描</button>
+  <button id="disconnectBtn" class="btn-sm danger" disabled>断开</button>
+</div>
+
+<div id="pageText" class="page active">
+  <pre id="textDisplay" class="text-full">等待数据...</pre>
+</div>
+
+<div id="pageWave" class="page">
+  <canvas id="waveCanvas"></canvas>
+</div>
+
+<script>
+'use strict';
+
+var tabText=document.getElementById('tabText'),tabWave=document.getElementById('tabWave');
+var pageText=document.getElementById('pageText'),pageWave=document.getElementById('pageWave');
+var textDisplay=document.getElementById('textDisplay');
+var waveCanvas=document.getElementById('waveCanvas'),ctx=waveCanvas.getContext('2d');
+var statusEl=document.getElementById('status');
+var headerInput=document.getElementById('headerInput'),tailInput=document.getElementById('tailInput');
+var textTypeInput=document.getElementById('textTypeInput'),waveTypeInput=document.getElementById('waveTypeInput');
+var applyBtn=document.getElementById('applyBtn');
+var scanBtn=document.getElementById('scanBtn'),disconnectBtn=document.getElementById('disconnectBtn');
+
+// Settings
+var headerBytes=[0xAA,0x55],tailBytes=[0x0D,0x0A],textType=0x01,waveType=0x02;
+
+function hexStrToBytes(s) {
+  s=s.replace(/\s+/g,'');
+  if(s.length%2!==0)s='0'+s;
+  var bytes=[];
+  for(var i=0;i<s.length;i+=2){var b=parseInt(s.substring(i,i+2),16);if(!isNaN(b))bytes.push(b);}
+  return bytes.length>0?bytes:[0xAA,0x55];
+}
+
+function parseSettings() {
+  headerBytes=hexStrToBytes(headerInput.value.trim());
+  tailBytes=hexStrToBytes(tailInput.value.trim());
+  textType=parseInt(textTypeInput.value.trim(),16)||0x01;
+  waveType=parseInt(waveTypeInput.value.trim(),16)||0x02;
+  headerInput.value=headerBytes.map(function(b){return b.toString(16).padStart(2,'0').toUpperCase();}).join(' ');
+  tailInput.value=tailBytes.map(function(b){return b.toString(16).padStart(2,'0').toUpperCase();}).join(' ');
+  textTypeInput.value=textType.toString(16).padStart(2,'0').toUpperCase();
+  waveTypeInput.value=waveType.toString(16).padStart(2,'0').toUpperCase();
+}
+
+// Tabs
+tabText.addEventListener('click',function(){
+  tabText.classList.add('active');tabWave.classList.remove('active');
+  pageText.classList.add('active');pageWave.classList.remove('active');
+});
+tabWave.addEventListener('click',function(){
+  tabWave.classList.add('active');tabText.classList.remove('active');
+  pageWave.classList.add('active');pageText.classList.remove('active');
+  resizeCanvas();
+});
+
+// BLE
+var device=null,server=null,rxChar=null;
+
+var KNOWN_UUIDS=[
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
+  '0000ffe0-0000-1000-8000-00805f9b34fb',
+  '0000ffe5-0000-1000-8000-00805f9b34fb',
+  '0000ff00-0000-1000-8000-00805f9b34fb',
+  '0000ffe1-0000-1000-8000-00805f9b34fb',
+  '0000ff01-0000-1000-8000-00805f9b34fb',
+  '0000ff10-0000-1000-8000-00805f9b34fb',
+  '0000ffa0-0000-1000-8000-00805f9b34fb',
+  '0000180a-0000-1000-8000-00805f9b34fb',
+  '0000180f-0000-1000-8000-00805f9b34fb',
+  '00001800-0000-1000-8000-00805f9b34fb',
+  '00001801-0000-1000-8000-00805f9b34fb',
+  '00001802-0000-1000-8000-00805f9b34fb',
+  '00001803-0000-1000-8000-00805f9b34fb',
+  '00001804-0000-1000-8000-00805f9b34fb',
+  '00001812-0000-1000-8000-00805f9b34fb',
+  '0000180d-0000-1000-8000-00805f9b34fb',
+  '00001809-0000-1000-8000-00805f9b34fb',
+  '00001810-0000-1000-8000-00805f9b34fb',
+  '00001816-0000-1000-8000-00805f9b34fb',
+  '0000181a-0000-1000-8000-00805f9b34fb',
+  '0000181c-0000-1000-8000-00805f9b34fb',
+  '0000181d-0000-1000-8000-00805f9b34fb',
+  '0000181e-0000-1000-8000-00805f9b34fb',
+  '00001808-0000-1000-8000-00805f9b34fb'
+];
+
+function setStatus(s){statusEl.className='status '+s;statusEl.textContent=s==='connected'?'已连接':'未连接';}
+function onDisconnect(){setStatus('disconnected');scanBtn.disabled=false;disconnectBtn.disabled=true;device=null;server=null;rxChar=null;}
+
+async function connectBLE(dev) {
+  setStatus('connecting');
+  dev.addEventListener('gattserverdisconnected',onDisconnect);
+  server=await dev.gatt.connect();
+  for(var i=0;i<KNOWN_UUIDS.length;i++){
+    try{
+      var svc=await server.getPrimaryService(KNOWN_UUIDS[i]);
+      var chars=await svc.getCharacteristics();
+      for(var j=0;j<chars.length;j++){if(chars[j].properties.notify){rxChar=chars[j];break;}}
+      if(!rxChar){for(var k=0;k<chars.length;k++){if(chars[k].properties.read){rxChar=chars[k];break;}}}
+      if(rxChar)break;
+    }catch(_){}
+  }
+  if(!rxChar)throw new Error('未找到可用特征值');
+  if(rxChar.properties.notify){await rxChar.startNotifications();rxChar.addEventListener('characteristicvaluechanged',onNotify);}
+  setStatus('connected');scanBtn.disabled=true;disconnectBtn.disabled=false;
+}
+
+scanBtn.addEventListener('click',async function(){
+  scanBtn.disabled=true;
+  try{
+    var dev=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:KNOWN_UUIDS});
+    await connectBLE(dev);
+  }catch(e){if(e.name!=='NotFoundError')textDisplay.textContent='错误: '+e.message;setStatus('disconnected');}
+  scanBtn.disabled=false;
+});
+
+disconnectBtn.addEventListener('click',async function(){
+  if(server&&server.connected)try{await server.disconnect();}catch(_){}
+  onDisconnect();
+});
+
+// Frame parser: states 0=search header, 1=read type, 2=read len(wave), 3=read data(wave), 4=accumulate tail(text)
+var parseState=0,headerMatch=0,tailMatch=0,frameType=0,frameLen=0,frameData=[];
+
+function parseByte(b) {
+  if(parseState===0){
+    if(b===headerBytes[headerMatch]){headerMatch++;if(headerMatch>=headerBytes.length){headerMatch=0;parseState=1;}}
+    else headerMatch=(b===headerBytes[0])?1:0;
+    return;
+  }
+  if(parseState===1){
+    frameType=b;frameData=[];
+    if(frameType===textType){tailMatch=0;parseState=4;}
+    else parseState=2;
+    return;
+  }
+  if(parseState===2){frameLen=b||256;parseState=frameLen===0?(dispatchFrame(frameType,[]),0):3;return;}
+  if(parseState===3){frameData.push(b);if(frameData.length>=frameLen){dispatchFrame(frameType,frameData);parseState=0;}return;}
+  if(parseState===4){
+    if(tailBytes.length>0&&b===tailBytes[tailMatch]){
+      tailMatch++;
+      if(tailMatch>=tailBytes.length){tailMatch=0;dispatchFrame(frameType,frameData);parseState=0;return;}
+    }else{
+      if(tailMatch>0){for(var ti=0;ti<tailMatch;ti++){frameData.push(tailBytes[ti]);if(frameData.length>65536){parseState=0;return;}}tailMatch=0;
+        if(tailBytes.length>0&&b===tailBytes[0]){tailMatch=1;return;}}
+      frameData.push(b);
+    }
+    if(frameData.length>65536){dispatchFrame(frameType,frameData);parseState=0;}
+  }
+}
+
+function dispatchFrame(type,data){
+  if(type===textType)textDisplay.textContent=new TextDecoder('utf-8').decode(new Uint8Array(data));
+  else if(type===waveType)drawWaveData(data);
+}
+
+// Waveform
+var wavePtr=0,waveW=0,waveH=0;
+
+function resizeCanvas(){
+  var rect=waveCanvas.parentElement.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
+  waveW=Math.floor(rect.width);waveH=Math.floor(rect.height);
+  waveCanvas.width=waveW*dpr;waveCanvas.height=waveH*dpr;
+  waveCanvas.style.width=waveW+'px';waveCanvas.style.height=waveH+'px';
+  ctx.setTransform(1,0,0,1,0,0);ctx.scale(dpr,dpr);
+  redrawWaveFull();
+}
+
+function drawWaveData(data){
+  if(waveW===0||waveH===0)resizeCanvas();
+  for(var i=0;i<data.length;i++){
+    var x=wavePtr%waveW,y=Math.round((1-data[i]/255)*(waveH-2))+1;
+    ctx.fillStyle='#06060e';ctx.fillRect(x,0,1,waveH);
+    if(x%50===0){ctx.fillStyle='#0e0e1a';ctx.fillRect(x,0,1,waveH);}
+    ctx.fillStyle='#0f0';ctx.fillRect(x,y,1,1);
+    wavePtr++;
+  }
+  ctx.fillStyle='#0e0e1a';ctx.fillRect(0,Math.floor(waveH/2),waveW,1);
+}
+
+function redrawWaveFull(){
+  ctx.fillStyle='#06060e';ctx.fillRect(0,0,waveW,waveH);
+  ctx.fillStyle='#0e0e1a';
+  for(var gx=0;gx<waveW;gx+=50)ctx.fillRect(gx,0,1,waveH);
+  var yMid=Math.floor(waveH/2);
+  for(var gy=yMid%50;gy<waveH;gy+=50)ctx.fillRect(0,gy,waveW,1);
+  if(wavePtr===0)return;
+  ctx.fillStyle='#0f0';
+  for(var i=0;i<Math.min(wavePtr,waveW);i++){
+    var x=i%waveW;
+    ctx.fillRect(x,Math.round((1-0/255)*(waveH-2))+1,1,1);
+  }
+  ctx.fillStyle='#0e0e1a';ctx.fillRect(0,yMid,waveW,1);
+}
+
+window.addEventListener('resize',function(){if(pageWave.classList.contains('active'))resizeCanvas();});
+
+function onNotify(event){
+  var bytes=new Uint8Array(event.target.value.buffer);
+  for(var i=0;i<bytes.length;i++)parseByte(bytes[i]);
+}
+
+applyBtn.addEventListener('click',function(){parseSettings();parseState=0;headerMatch=0;textDisplay.textContent='设置已更新，等待数据...';});
+
+// Check if Web Bluetooth is available
+if(typeof navigator.bluetooth==='undefined'){
+  textDisplay.textContent='[警告] 当前环境不支持 Web Bluetooth\n\n直接打开 HTML 文件 (file://) 无法使用蓝牙。\n\n解决方案:\n1. 部署到 GitHub Pages (免费 HTTPS)\n2. 手机安装 "HTTP Server" 类 App 本地托管\n3. PC 上运行 python -m http.server 然后手机访问';
+  scanBtn.disabled=true;
+}
+
+parseSettings();
+</script>
+</body>
+</html>
