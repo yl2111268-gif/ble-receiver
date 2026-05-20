@@ -115,6 +115,18 @@ body {
   user-select: text;
 }
 
+/* ── Debug page ───────────────────── */
+.debug-text {
+  color: #aaa;
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+.debug-text .time { color: #555; }
+.debug-text .hex  { color: #5dade2; }
+.debug-text .info { color: #f0a040; }
+.debug-text .err  { color: #e04040; }
+.debug-text .ok   { color: #4c0; }
+
 /* ── Waveform page ────────────────── */
 #waveCanvas {
   width: 100%;

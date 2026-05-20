@@ -14,6 +14,7 @@
     <div class="tabs">
       <button id="tabText" class="tab active">文本</button>
       <button id="tabWave" class="tab">波形</button>
+      <button id="tabDebug" class="tab">调试</button>
     </div>
     <span id="status" class="status disconnected">未连接</span>
   </div>
@@ -41,6 +42,11 @@
   <!-- Waveform page: canvas -->
   <div id="pageWave" class="page">
     <canvas id="waveCanvas"></canvas>
+  </div>
+
+  <!-- Debug page: raw hex dump -->
+  <div id="pageDebug" class="page">
+    <pre id="debugDisplay" class="text-full debug-text">等待 BLE 数据...</pre>
   </div>
 
   <script src="app.js"></script>

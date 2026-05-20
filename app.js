@@ -5,9 +5,12 @@
 // ═══════════════════════════════════════════════════
 const tabText       = document.getElementById('tabText');
 const tabWave       = document.getElementById('tabWave');
+const tabDebug      = document.getElementById('tabDebug');
 const pageText      = document.getElementById('pageText');
 const pageWave      = document.getElementById('pageWave');
+const pageDebug     = document.getElementById('pageDebug');
 const textDisplay   = document.getElementById('textDisplay');
+const debugDisplay  = document.getElementById('debugDisplay');
 const waveCanvas    = document.getElementById('waveCanvas');
 const ctx           = waveCanvas.getContext('2d');
 const statusEl      = document.getElementById('status');
@@ -53,20 +56,21 @@ function hexStrToBytes(s) {
 // ═══════════════════════════════════════════════════
 // Tab switching
 // ═══════════════════════════════════════════════════
-tabText.addEventListener('click', function() {
-  tabText.classList.add('active');
-  tabWave.classList.remove('active');
-  pageText.classList.add('active');
-  pageWave.classList.remove('active');
-});
+function switchTab(activeTab, activePage) {
+  var tabs = [tabText, tabWave, tabDebug];
+  var pages = [pageText, pageWave, pageDebug];
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].classList.remove('active');
+    pages[i].classList.remove('active');
+  }
+  activeTab.classList.add('active');
+  activePage.classList.add('active');
+  if (activePage === pageWave) resizeCanvas();
+}
 
-tabWave.addEventListener('click', function() {
-  tabWave.classList.add('active');
-  tabText.classList.remove('active');
-  pageWave.classList.add('active');
-  pageText.classList.remove('active');
-  resizeCanvas();
-});
+tabText.addEventListener('click', function() { switchTab(tabText, pageText); });
+tabWave.addEventListener('click', function() { switchTab(tabWave, pageWave); });
+tabDebug.addEventListener('click', function() { switchTab(tabDebug, pageDebug); });
 
 // ═══════════════════════════════════════════════════
 // BLE
@@ -198,6 +202,7 @@ function parseByte(b) {
       if (headerMatch >= headerBytes.length) {
         headerMatch = 0;
         parseState = 1;
+        debugLog('帧头匹配 ' + bytesToHex(headerBytes), 'info');
       }
     } else {
       headerMatch = (b === headerBytes[0]) ? 1 : 0;
@@ -209,13 +214,17 @@ function parseByte(b) {
     // Read type byte, decide mode
     frameType = b;
     frameData = [];
+    var typeHex = b.toString(16).padStart(2, '0').toUpperCase();
     if (frameType === textType) {
-      // Text mode: accumulate until frame tail
       tailMatch = 0;
       parseState = 4;
-    } else {
-      // Waveform (or other): read length then data
+      debugLog('类型=文本(0x' + typeHex + '), 等待帧尾 ' + bytesToHex(tailBytes), 'info');
+    } else if (frameType === waveType) {
       parseState = 2;
+      debugLog('类型=波形(0x' + typeHex + '), 等待长度字节', 'info');
+    } else {
+      parseState = 2;
+      debugLog('类型=未知(0x' + typeHex + '), 将按长度模式解析', 'err');
     }
     return;
   }
@@ -277,10 +286,16 @@ function parseByte(b) {
 }
 
 function dispatchFrame(type, data) {
+  var typeHex = type.toString(16).padStart(2, '0').toUpperCase();
   if (type === textType) {
-    textDisplay.textContent = new TextDecoder('utf-8').decode(new Uint8Array(data));
+    var text = new TextDecoder('utf-8').decode(new Uint8Array(data));
+    debugLog('文本帧 ' + data.length + ' 字节: ' + text, 'ok');
+    textDisplay.textContent = text;
   } else if (type === waveType) {
+    debugLog('波形帧 ' + data.length + ' 字节: ' + bytesToHex(data), 'ok');
     drawWaveData(data);
+  } else {
+    debugLog('未知帧类型 0x' + typeHex + ' ' + data.length + ' 字节', 'err');
   }
 }
 
@@ -374,10 +389,33 @@ window.addEventListener('resize', function() {
 });
 
 // ═══════════════════════════════════════════════════
+// Debug logging
+// ═══════════════════════════════════════════════════
+var debugLines = [];
+var debugMax = 200;
+
+function debugLog(msg, cls) {
+  var now = new Date().toLocaleTimeString() + '.' + String(Date.now() % 1000).padStart(3, '0');
+  debugLines.push('<span class="time">[' + now + ']</span> <span class="' + (cls || '') + '">' + msg + '</span>');
+  if (debugLines.length > debugMax) debugLines.shift();
+  debugDisplay.innerHTML = debugLines.join('\n');
+  debugDisplay.scrollTop = debugDisplay.scrollHeight;
+}
+
+function bytesToHex(arr) {
+  var parts = [];
+  for (var i = 0; i < arr.length; i++) {
+    parts.push(arr[i].toString(16).padStart(2, '0').toUpperCase());
+  }
+  return parts.join(' ');
+}
+
+// ═══════════════════════════════════════════════════
 // BLE data handler
 // ═══════════════════════════════════════════════════
 function onNotify(event) {
   var bytes = new Uint8Array(event.target.value.buffer);
+  debugLog('收到 ' + bytes.length + ' 字节: ' + bytesToHex(bytes), 'hex');
   for (var i = 0; i < bytes.length; i++) {
     parseByte(bytes[i]);
   }
