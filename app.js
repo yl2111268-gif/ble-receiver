@@ -209,13 +209,12 @@ simClearBtn.addEventListener('click', function() {
 
 // ═══════════════════════════════════════════════════
 // Frame parser state machine
-// States: 0=search header, 1=read type, 2=read len(wave), 3=read data(wave), 4=accumulate tail(text)
+// States: 0=search header, 1=read type, 4=accumulate data until tail
 // ═══════════════════════════════════════════════════
 var parseState = 0;
 var headerMatch = 0;
 var tailMatch   = 0;
 var frameType = 0;
-var frameLen = 0;
 var frameData = [];
 var parseTimer = null;
 var PARSE_TIMEOUT = 2000; // 2s timeout for incomplete frames
@@ -246,52 +245,24 @@ function parseByte(b) {
   // Reset timeout on each byte received while parsing a frame
   if (parseTimer) { clearTimeout(parseTimer); }
   parseTimer = setTimeout(function() {
-    debugLog('超时! 状态=' + parseState + ' frameType=0x' + frameType.toString(16) + ' 已收集=' + frameData.length + '/' + frameLen + ' 字节，丢弃不完整帧', 'err');
+    debugLog('超时! 状态=' + parseState + ' frameType=0x' + frameType.toString(16) + ' 已收集=' + frameData.length + ' 字节，丢弃不完整帧', 'err');
     resetParser();
   }, PARSE_TIMEOUT);
 
   if (parseState === 1) {
-    // Read type byte, decide mode
+    // Read type byte, all modes use tail-based framing
     frameType = b;
     frameData = [];
+    tailMatch = 0;
+    parseState = 4;
     var typeHex = b.toString(16).padStart(2, '0').toUpperCase();
-    if (frameType === textType) {
-      tailMatch = 0;
-      parseState = 4;
-      debugLog('类型=文本(0x' + typeHex + '), 等待帧尾 ' + bytesToHex(tailBytes), 'info');
-    } else if (frameType === waveType) {
-      parseState = 2;
-      debugLog('类型=波形(0x' + typeHex + '), 等待长度字节', 'info');
-    } else {
-      parseState = 2;
-      debugLog('类型=未知(0x' + typeHex + '), 将按长度模式解析', 'err');
-    }
-    return;
-  }
-
-  if (parseState === 2) {
-    frameLen = b || 256;
-    if (frameLen === 0) {
-      dispatchFrame(frameType, []);
-      parseState = 0;
-    } else {
-      parseState = 3;
-    }
-    return;
-  }
-
-  if (parseState === 3) {
-    // Waveform data: collect until length reached
-    frameData.push(b);
-    if (frameData.length >= frameLen) {
-      dispatchFrame(frameType, frameData);
-      parseState = 0;
-    }
+    var typeName = (frameType === textType) ? '文本' : (frameType === waveType) ? '波形' : '未知';
+    debugLog('类型=' + typeName + '(0x' + typeHex + '), 等待帧尾 ' + bytesToHex(tailBytes), 'info');
     return;
   }
 
   if (parseState === 4) {
-    // Text mode: accumulate, check for tail
+    // Accumulate data until tail found
     if (tailBytes.length > 0 && b === tailBytes[tailMatch]) {
       tailMatch++;
       if (tailMatch >= tailBytes.length) {
