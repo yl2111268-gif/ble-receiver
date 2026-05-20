@@ -152,6 +152,10 @@ async function connectBLE(dev) {
 }
 
 scanBtn.addEventListener('click', async function() {
+  if (!navigator.bluetooth) {
+    textDisplay.textContent = '错误: 当前浏览器不支持 Web Bluetooth\n\n请使用 Chrome 浏览器打开此页面。\n\n如果你在用微信/QQ 等 App 打开，请点右上角菜单 → 在浏览器中打开。';
+    return;
+  }
   scanBtn.disabled = true;
   try {
     var dev = await navigator.bluetooth.requestDevice({
@@ -391,6 +395,11 @@ applyBtn.addEventListener('click', function() {
 
 // Init
 parseSettings();
+
+if (!navigator.bluetooth) {
+  textDisplay.textContent = '[警告] 当前浏览器不支持 Web Bluetooth\n\n请使用 Android Chrome 打开此页面。\n如果你在用微信/QQ 等 App 内打开，请点右上角 → 在浏览器中打开。';
+  scanBtn.disabled = true;
+}
 
 // Service Worker
 if ('serviceWorker' in navigator) {
