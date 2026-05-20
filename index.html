@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a0f">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+  <title>BLE 数据接收器</title>
+</head>
+<body>
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="tabs">
+      <button id="tabText" class="tab active">文本</button>
+      <button id="tabWave" class="tab">波形</button>
+    </div>
+    <span id="status" class="status disconnected">未连接</span>
+  </div>
+
+  <!-- Settings bar -->
+  <div class="settings">
+    <span class="label">帧头(HEX):</span>
+    <input id="headerInput" type="text" value="AA 55" maxlength="12" spellcheck="false">
+    <button id="applyBtn" class="btn-sm">应用</button>
+    <span class="label">帧尾(HEX):</span>
+    <input id="tailInput" type="text" value="0D 0A" maxlength="12" spellcheck="false">
+    <span class="label">文本:</span>
+    <input id="textTypeInput" type="text" value="01" maxlength="2" spellcheck="false">
+    <span class="label">波形:</span>
+    <input id="waveTypeInput" type="text" value="02" maxlength="2" spellcheck="false">
+    <button id="scanBtn" class="btn-sm primary">扫描</button>
+    <button id="disconnectBtn" class="btn-sm danger" disabled>断开</button>
+  </div>
+
+  <!-- Text page: full-refresh display -->
+  <div id="pageText" class="page active">
+    <pre id="textDisplay" class="text-full">等待数据...</pre>
+  </div>
+
+  <!-- Waveform page: canvas -->
+  <div id="pageWave" class="page">
+    <canvas id="waveCanvas"></canvas>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

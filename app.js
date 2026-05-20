@@ -1,0 +1,398 @@
+'use strict';
+
+// ═══════════════════════════════════════════════════
+// DOM refs
+// ═══════════════════════════════════════════════════
+const tabText       = document.getElementById('tabText');
+const tabWave       = document.getElementById('tabWave');
+const pageText      = document.getElementById('pageText');
+const pageWave      = document.getElementById('pageWave');
+const textDisplay   = document.getElementById('textDisplay');
+const waveCanvas    = document.getElementById('waveCanvas');
+const ctx           = waveCanvas.getContext('2d');
+const statusEl      = document.getElementById('status');
+const headerInput   = document.getElementById('headerInput');
+const textTypeInput = document.getElementById('textTypeInput');
+const waveTypeInput = document.getElementById('waveTypeInput');
+const tailInput     = document.getElementById('tailInput');
+const applyBtn      = document.getElementById('applyBtn');
+const scanBtn       = document.getElementById('scanBtn');
+const disconnectBtn = document.getElementById('disconnectBtn');
+
+// ═══════════════════════════════════════════════════
+// Settings
+// ═══════════════════════════════════════════════════
+let headerBytes = [0xAA, 0x55];
+let tailBytes   = [0x0D, 0x0A];  // default: CR LF
+let textType    = 0x01;
+let waveType    = 0x02;
+
+function parseSettings() {
+  headerBytes = hexStrToBytes(headerInput.value.trim());
+  tailBytes   = hexStrToBytes(tailInput.value.trim());
+  textType    = parseInt(textTypeInput.value.trim(), 16) || 0x01;
+  waveType    = parseInt(waveTypeInput.value.trim(), 16) || 0x02;
+
+  headerInput.value = headerBytes.map(function(b){return b.toString(16).padStart(2,'0').toUpperCase()}).join(' ');
+  tailInput.value   = tailBytes.map(function(b){return b.toString(16).padStart(2,'0').toUpperCase()}).join(' ');
+  textTypeInput.value = textType.toString(16).padStart(2,'0').toUpperCase();
+  waveTypeInput.value = waveType.toString(16).padStart(2,'0').toUpperCase();
+}
+
+function hexStrToBytes(s) {
+  s = s.replace(/\s+/g, '');
+  if (s.length % 2 !== 0) s = '0' + s;
+  var bytes = [];
+  for (var i = 0; i < s.length; i += 2) {
+    var b = parseInt(s.substring(i, i+2), 16);
+    if (!isNaN(b)) bytes.push(b);
+  }
+  return bytes.length > 0 ? bytes : [0xAA, 0x55];
+}
+
+// ═══════════════════════════════════════════════════
+// Tab switching
+// ═══════════════════════════════════════════════════
+tabText.addEventListener('click', function() {
+  tabText.classList.add('active');
+  tabWave.classList.remove('active');
+  pageText.classList.add('active');
+  pageWave.classList.remove('active');
+});
+
+tabWave.addEventListener('click', function() {
+  tabWave.classList.add('active');
+  tabText.classList.remove('active');
+  pageWave.classList.add('active');
+  pageText.classList.remove('active');
+  resizeCanvas();
+});
+
+// ═══════════════════════════════════════════════════
+// BLE
+// ═══════════════════════════════════════════════════
+let device = null, server = null, rxChar = null;
+
+const KNOWN_UUIDS = [
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
+  '0000ffe0-0000-1000-8000-00805f9b34fb',
+  '0000ffe5-0000-1000-8000-00805f9b34fb',
+  '0000ff00-0000-1000-8000-00805f9b34fb',
+  '0000ffe1-0000-1000-8000-00805f9b34fb',
+  '0000ff01-0000-1000-8000-00805f9b34fb',
+  '0000ff10-0000-1000-8000-00805f9b34fb',
+  '0000ffa0-0000-1000-8000-00805f9b34fb',
+  '0000180a-0000-1000-8000-00805f9b34fb',
+  '0000180f-0000-1000-8000-00805f9b34fb',
+  '00001800-0000-1000-8000-00805f9b34fb',
+  '00001801-0000-1000-8000-00805f9b34fb',
+  '00001802-0000-1000-8000-00805f9b34fb',
+  '00001803-0000-1000-8000-00805f9b34fb',
+  '00001804-0000-1000-8000-00805f9b34fb',
+  '00001812-0000-1000-8000-00805f9b34fb',
+  '0000180d-0000-1000-8000-00805f9b34fb',
+  '00001809-0000-1000-8000-00805f9b34fb',
+  '00001810-0000-1000-8000-00805f9b34fb',
+  '00001816-0000-1000-8000-00805f9b34fb',
+  '0000181a-0000-1000-8000-00805f9b34fb',
+  '0000181c-0000-1000-8000-00805f9b34fb',
+  '0000181d-0000-1000-8000-00805f9b34fb',
+  '0000181e-0000-1000-8000-00805f9b34fb',
+  '00001808-0000-1000-8000-00805f9b34fb'
+];
+
+let byteCountElBacking = 0;
+
+function setStatus(state) {
+  statusEl.className = 'status ' + state;
+  statusEl.textContent = state === 'connected' ? '已连接' : '未连接';
+}
+
+function onDisconnect() {
+  setStatus('disconnected');
+  scanBtn.disabled = false;
+  disconnectBtn.disabled = true;
+  device = null; server = null; rxChar = null;
+}
+
+async function connectBLE(dev) {
+  setStatus('connecting');
+  dev.addEventListener('gattserverdisconnected', onDisconnect);
+  server = await dev.gatt.connect();
+
+  for (var i = 0; i < KNOWN_UUIDS.length; i++) {
+    try {
+      var svc = await server.getPrimaryService(KNOWN_UUIDS[i]);
+      var chars = await svc.getCharacteristics();
+      for (var j = 0; j < chars.length; j++) {
+        if (chars[j].properties.notify) {
+          rxChar = chars[j];
+          break;
+        }
+      }
+      if (!rxChar) {
+        for (var k = 0; k < chars.length; k++) {
+          if (chars[k].properties.read) { rxChar = chars[k]; break; }
+        }
+      }
+      if (rxChar) break;
+    } catch (_) { /* try next UUID */ }
+  }
+
+  if (!rxChar) throw new Error('未找到可用特征值');
+
+  if (rxChar.properties.notify) {
+    await rxChar.startNotifications();
+    rxChar.addEventListener('characteristicvaluechanged', onNotify);
+  }
+
+  setStatus('connected');
+  scanBtn.disabled = true;
+  disconnectBtn.disabled = false;
+}
+
+scanBtn.addEventListener('click', async function() {
+  scanBtn.disabled = true;
+  try {
+    var dev = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: KNOWN_UUIDS
+    });
+    await connectBLE(dev);
+  } catch (e) {
+    if (e.name !== 'NotFoundError') {
+      textDisplay.textContent = '错误: ' + e.message;
+    }
+    setStatus('disconnected');
+  }
+  scanBtn.disabled = false;
+});
+
+disconnectBtn.addEventListener('click', async function() {
+  if (server && server.connected) {
+    try { await server.disconnect(); } catch (_) {}
+  }
+  onDisconnect();
+});
+
+// ═══════════════════════════════════════════════════
+// Frame parser state machine
+// States: 0=search header, 1=read type, 2=read len(wave), 3=read data(wave), 4=accumulate tail(text)
+// ═══════════════════════════════════════════════════
+var parseState = 0;
+var headerMatch = 0;
+var tailMatch   = 0;
+var frameType = 0;
+var frameLen = 0;
+var frameData = [];
+
+function parseByte(b) {
+  if (parseState === 0) {
+    // Searching for header
+    if (b === headerBytes[headerMatch]) {
+      headerMatch++;
+      if (headerMatch >= headerBytes.length) {
+        headerMatch = 0;
+        parseState = 1;
+      }
+    } else {
+      headerMatch = (b === headerBytes[0]) ? 1 : 0;
+    }
+    return;
+  }
+
+  if (parseState === 1) {
+    // Read type byte, decide mode
+    frameType = b;
+    frameData = [];
+    if (frameType === textType) {
+      // Text mode: accumulate until frame tail
+      tailMatch = 0;
+      parseState = 4;
+    } else {
+      // Waveform (or other): read length then data
+      parseState = 2;
+    }
+    return;
+  }
+
+  if (parseState === 2) {
+    frameLen = b || 256;
+    if (frameLen === 0) {
+      dispatchFrame(frameType, []);
+      parseState = 0;
+    } else {
+      parseState = 3;
+    }
+    return;
+  }
+
+  if (parseState === 3) {
+    // Waveform data: collect until length reached
+    frameData.push(b);
+    if (frameData.length >= frameLen) {
+      dispatchFrame(frameType, frameData);
+      parseState = 0;
+    }
+    return;
+  }
+
+  if (parseState === 4) {
+    // Text mode: accumulate, check for tail
+    if (tailBytes.length > 0 && b === tailBytes[tailMatch]) {
+      tailMatch++;
+      if (tailMatch >= tailBytes.length) {
+        // Tail found — strip tail, dispatch frame
+        tailMatch = 0;
+        dispatchFrame(frameType, frameData);
+        parseState = 0;
+        return;
+      }
+    } else {
+      // Flush partially-matched tail bytes into data
+      if (tailMatch > 0) {
+        for (var ti = 0; ti < tailMatch; ti++) {
+          frameData.push(tailBytes[ti]);
+          if (frameData.length > 65536) { parseState = 0; return; }
+        }
+        tailMatch = 0;
+        // Re-check this byte against tail start
+        if (tailBytes.length > 0 && b === tailBytes[0]) {
+          tailMatch = 1;
+          return;
+        }
+      }
+      frameData.push(b);
+    }
+    // Safety: max 64KB text data, then give up
+    if (frameData.length > 65536) {
+      dispatchFrame(frameType, frameData);
+      parseState = 0;
+    }
+  }
+}
+
+function dispatchFrame(type, data) {
+  if (type === textType) {
+    textDisplay.textContent = new TextDecoder('utf-8').decode(new Uint8Array(data));
+  } else if (type === waveType) {
+    drawWaveData(data);
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// Waveform drawing
+// ═══════════════════════════════════════════════════
+var waveData = [];      // Full data store
+var wavePtr = 0;        // Current write position (wraps)
+var waveW = 0, waveH = 0;
+
+function resizeCanvas() {
+  var rect = waveCanvas.parentElement.getBoundingClientRect();
+  var dpr = window.devicePixelRatio || 1;
+  waveW = Math.floor(rect.width);
+  waveH = Math.floor(rect.height);
+  waveCanvas.width = waveW * dpr;
+  waveCanvas.height = waveH * dpr;
+  waveCanvas.style.width = waveW + 'px';
+  waveCanvas.style.height = waveH + 'px';
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(dpr, dpr);
+  redrawWaveFull();
+}
+
+function drawWaveData(data) {
+  if (waveW === 0 || waveH === 0) resizeCanvas();
+
+  var len = data.length;
+  var yMid = Math.floor(waveH / 2);
+
+  for (var i = 0; i < len; i++) {
+    var x = wavePtr % waveW;
+    var rawVal = data[i];
+    // Scale byte 0-255 to canvas height (inverted: 0=bottom, 255=top)
+    var y = Math.round((1 - rawVal / 255) * (waveH - 2)) + 1;
+
+    // Clear old vertical slice at this x
+    ctx.fillStyle = '#06060e';
+    ctx.fillRect(x, 0, 1, waveH);
+
+    // Draw grid line every 50px
+    if (x % 50 === 0) {
+      ctx.fillStyle = '#0e0e1a';
+      ctx.fillRect(x, 0, 1, waveH);
+    }
+
+    // Draw this point
+    ctx.fillStyle = '#0f0';
+    ctx.fillRect(x, y, 1, 1);
+
+    wavePtr++;
+  }
+
+  // Draw center line reference
+  ctx.fillStyle = '#0e0e1a';
+  ctx.fillRect(0, yMid, waveW, 1);
+}
+
+function redrawWaveFull() {
+  ctx.fillStyle = '#06060e';
+  ctx.fillRect(0, 0, waveW, waveH);
+
+  // Grid
+  ctx.fillStyle = '#0e0e1a';
+  for (var gx = 0; gx < waveW; gx += 50) {
+    ctx.fillRect(gx, 0, 1, waveH);
+  }
+  var yMid = Math.floor(waveH / 2);
+  for (var gy = yMid % 50; gy < waveH; gy += 50) {
+    ctx.fillRect(0, gy, waveW, 1);
+  }
+
+  // Data points
+  if (wavePtr === 0) return;
+  var start = Math.max(0, wavePtr - waveW);
+  ctx.fillStyle = '#0f0';
+  for (var i = start; i < wavePtr; i++) {
+    var x = i % waveW;
+    var rawVal = waveData[i] || 0;
+    var y = Math.round((1 - rawVal / 255) * (waveH - 2)) + 1;
+    ctx.fillRect(x, y, 1, 1);
+  }
+
+  // Center line
+  ctx.fillStyle = '#0e0e1a';
+  ctx.fillRect(0, yMid, waveW, 1);
+}
+
+window.addEventListener('resize', function() {
+  if (pageWave.classList.contains('active')) resizeCanvas();
+});
+
+// ═══════════════════════════════════════════════════
+// BLE data handler
+// ═══════════════════════════════════════════════════
+function onNotify(event) {
+  var bytes = new Uint8Array(event.target.value.buffer);
+  for (var i = 0; i < bytes.length; i++) {
+    parseByte(bytes[i]);
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// Apply settings
+// ═══════════════════════════════════════════════════
+applyBtn.addEventListener('click', function() {
+  parseSettings();
+  parseState = 0;
+  headerMatch = 0;
+  textDisplay.textContent = '帧头已更新，等待数据...';
+});
+
+// Init
+parseSettings();
+
+// Service Worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+}
