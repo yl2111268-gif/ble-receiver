@@ -116,6 +116,7 @@ function setStatus(state) {
 }
 
 function onDisconnect() {
+  resetParser();
   setStatus('disconnected');
   scanBtn.disabled = false;
   disconnectBtn.disabled = true;
@@ -216,10 +217,19 @@ var tailMatch   = 0;
 var frameType = 0;
 var frameLen = 0;
 var frameData = [];
+var parseTimer = null;
+var PARSE_TIMEOUT = 2000; // 2s timeout for incomplete frames
+
+function resetParser() {
+  parseState = 0;
+  headerMatch = 0;
+  tailMatch = 0;
+  frameData = [];
+  if (parseTimer) { clearTimeout(parseTimer); parseTimer = null; }
+}
 
 function parseByte(b) {
   if (parseState === 0) {
-    // Searching for header
     if (b === headerBytes[headerMatch]) {
       headerMatch++;
       if (headerMatch >= headerBytes.length) {
@@ -232,6 +242,13 @@ function parseByte(b) {
     }
     return;
   }
+
+  // Reset timeout on each byte received while parsing a frame
+  if (parseTimer) { clearTimeout(parseTimer); }
+  parseTimer = setTimeout(function() {
+    debugLog('超时! 状态=' + parseState + ' frameType=0x' + frameType.toString(16) + ' 已收集=' + frameData.length + '/' + frameLen + ' 字节，丢弃不完整帧', 'err');
+    resetParser();
+  }, PARSE_TIMEOUT);
 
   if (parseState === 1) {
     // Read type byte, decide mode
@@ -309,6 +326,7 @@ function parseByte(b) {
 }
 
 function dispatchFrame(type, data) {
+  if (parseTimer) { clearTimeout(parseTimer); parseTimer = null; }
   var typeHex = type.toString(16).padStart(2, '0').toUpperCase();
   if (type === textType) {
     var text = new TextDecoder('utf-8').decode(new Uint8Array(data));
