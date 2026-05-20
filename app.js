@@ -365,32 +365,30 @@ function drawWaveData(data) {
   if (waveW === 0 || waveH === 0) resizeCanvas();
 
   var len = data.length;
+
+  // Clear entire canvas and start from x=0 each frame
+  wavePtr = 0;
+  ctx.fillStyle = '#06060e';
+  ctx.fillRect(0, 0, waveW, waveH);
+
+  // Draw grid
   var yMid = Math.floor(waveH / 2);
+  ctx.fillStyle = '#0e0e1a';
+  for (var gx = 0; gx < waveW; gx += 50) {
+    ctx.fillRect(gx, 0, 1, waveH);
+  }
 
-  for (var i = 0; i < len; i++) {
-    var x = wavePtr % waveW;
+  // Draw data points from left to right
+  ctx.fillStyle = '#0f0';
+  for (var i = 0; i < len && i < waveW; i++) {
+    var x = i;
     var rawVal = data[i];
-    // Scale byte 0-255 to canvas height (inverted: 0=bottom, 255=top)
     var y = Math.round((1 - rawVal / 255) * (waveH - 2)) + 1;
-
-    // Clear old vertical slice at this x
-    ctx.fillStyle = '#06060e';
-    ctx.fillRect(x, 0, 1, waveH);
-
-    // Draw grid line every 50px
-    if (x % 50 === 0) {
-      ctx.fillStyle = '#0e0e1a';
-      ctx.fillRect(x, 0, 1, waveH);
-    }
-
-    // Draw this point
-    ctx.fillStyle = '#0f0';
     ctx.fillRect(x, y, 1, 1);
-
     wavePtr++;
   }
 
-  // Draw center line reference
+  // Center line
   ctx.fillStyle = '#0e0e1a';
   ctx.fillRect(0, yMid, waveW, 1);
 }
