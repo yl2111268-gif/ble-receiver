@@ -248,7 +248,7 @@ function dispatchFrame(type,data){
 }
 
 // Waveform
-var wavePtr=0,waveW=0,waveH=0,scrollX=0;
+var wavePtr=0,waveW=0,waveH=0,scrollX=0,zoomX=0;
 
 function resizeCanvas(){
   var rect=waveCanvas.parentElement.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
@@ -259,45 +259,41 @@ function resizeCanvas(){
   redrawWaveFull();
 }
 
+function getZoom(){return zoomX>0?zoomX:waveData.length>waveW?waveData.length/waveW:1;}
+
 function drawWaveData(data){
   waveData=[];
   for(var i=0;i<data.length-1;i+=2)waveData.push((data[i]<<8)|data[i+1]);
-  wavePtr=waveData.length;
-  scrollX=Math.max(0,waveData.length-waveW);
+  wavePtr=waveData.length;zoomX=0;scrollX=0;
   if(waveW===0||waveH===0)resizeCanvas();
   if(waveW===0||waveH===0)return;
-  ctx.fillStyle='#06060e';ctx.fillRect(0,0,waveW,waveH);
-  ctx.fillStyle='#0e0e1a';
-  for(var gx=0;gx<waveW;gx+=50)ctx.fillRect(gx,0,1,waveH);
-  ctx.strokeStyle='#0f0';ctx.lineWidth=1;ctx.beginPath();
-  var first=true;
-  for(var j=scrollX;j<waveData.length&&j<scrollX+waveW;j++){
-    var x=j-scrollX,y=Math.round((1-waveData[j]/4095)*(waveH-2))+1;
-    if(first){ctx.moveTo(x,y);first=false;}else ctx.lineTo(x,y);
-  }
-  ctx.stroke();
-  ctx.fillStyle='#0e0e1a';ctx.fillRect(0,Math.floor(waveH/2),waveW,1);
+  redrawWaveFull();
 }
 
 function redrawWaveFull(){
+  if(waveW===0||waveH===0)return;
   ctx.fillStyle='#06060e';ctx.fillRect(0,0,waveW,waveH);
   ctx.fillStyle='#0e0e1a';
   for(var gx=0;gx<waveW;gx+=50)ctx.fillRect(gx,0,1,waveH);
   var yMid=Math.floor(waveH/2);
   for(var gy=yMid%50;gy<waveH;gy+=50)ctx.fillRect(0,gy,waveW,1);
-  if(waveData.length===0)return;
+  if(waveData.length===0){ctx.fillRect(0,yMid,waveW,1);return;}
+  var z=getZoom();
+  if(scrollX>Math.max(0,waveData.length-waveW/z))scrollX=Math.max(0,waveData.length-waveW/z);
+  if(scrollX<0)scrollX=0;
   ctx.strokeStyle='#0f0';ctx.lineWidth=1;ctx.beginPath();
   var first=true;
-  for(var i=0;i<waveW&&scrollX+i<waveData.length;i++){
-    var rawVal=waveData[scrollX+i]||0,y=Math.round((1-rawVal/4095)*(waveH-2))+1;
-    if(first){ctx.moveTo(i,y);first=false;}else ctx.lineTo(i,y);
+  for(var px=0;px<waveW;px++){
+    var si=Math.floor(scrollX+px/z);if(si>=waveData.length)break;
+    var y=Math.round((1-waveData[si]/4095)*(waveH-2))+1;
+    if(first){ctx.moveTo(px,y);first=false;}else ctx.lineTo(px,y);
   }
   ctx.stroke();
   ctx.fillStyle='#0e0e1a';ctx.fillRect(0,yMid,waveW,1);
-  if(waveData.length>waveW){
+  var totalW=waveData.length/z;
+  if(totalW>waveW){
     ctx.fillStyle='rgba(255,255,255,0.2)';
-    var barW=Math.max(20,waveW*waveW/waveData.length);
-    var barX=scrollX/(waveData.length-waveW)*(waveW-barW);
+    var barW=Math.max(20,waveW*waveW/totalW),barX=(scrollX*z/totalW)*(waveW-barW);
     ctx.fillRect(barX,waveH-4,barW,2);
   }
 }
@@ -306,10 +302,26 @@ window.addEventListener('resize',function(){if(pageWave.classList.contains('acti
 
 var dragStartX=0,dragStartScroll=0,dragging=false;
 waveCanvas.addEventListener('pointerdown',function(e){dragging=true;dragStartX=e.clientX;dragStartScroll=scrollX;waveCanvas.setPointerCapture(e.pointerId);});
-waveCanvas.addEventListener('pointermove',function(e){if(!dragging)return;scrollX=Math.max(0,Math.min(waveData.length-waveW,dragStartScroll+dragStartX-e.clientX));redrawWaveFull();});
+waveCanvas.addEventListener('pointermove',function(e){if(!dragging)return;scrollX=dragStartScroll+(dragStartX-e.clientX)/getZoom();redrawWaveFull();});
 waveCanvas.addEventListener('pointerup',function(){dragging=false;});
 waveCanvas.addEventListener('pointerleave',function(){dragging=false;});
-waveCanvas.addEventListener('wheel',function(e){e.preventDefault();scrollX=Math.max(0,Math.min(waveData.length-waveW,scrollX+e.deltaX+e.deltaY));redrawWaveFull();},{passive:false});
+waveCanvas.addEventListener('wheel',function(e){e.preventDefault();scrollX+=e.deltaY/getZoom();redrawWaveFull();},{passive:false});
+
+// Zoom controls
+(function(){
+  var c=document.createElement('div');
+  c.style.cssText='position:absolute;bottom:8px;right:8px;display:flex;gap:4px;z-index:10;';
+  var zo=document.createElement('button');zo.textContent='-';zo.className='btn-sm';
+  var zl=document.createElement('span');zl.id='zoomLabel';zl.style.cssText='color:#aaa;font-size:11px;line-height:24px;min-width:36px;text-align:center;';
+  var zi=document.createElement('button');zi.textContent='+';zi.className='btn-sm';
+  var zf=document.createElement('button');zf.textContent='Fit';zf.className='btn-sm';
+  c.appendChild(zo);c.appendChild(zl);c.appendChild(zi);c.appendChild(zf);
+  waveCanvas.parentElement.style.position='relative';
+  waveCanvas.parentElement.appendChild(c);
+  zi.onclick=function(){zoomX=(zoomX>0?zoomX:getZoom())*1.5;redrawWaveFull();zl.textContent=zoomX>=1?Math.round(zoomX)+':1':'1:'+Math.round(1/zoomX);};
+  zo.onclick=function(){zoomX=(zoomX>0?zoomX:getZoom())/1.5;if(zoomX<0.1)zoomX=0.1;redrawWaveFull();zl.textContent=zoomX>=1?Math.round(zoomX)+':1':'1:'+Math.round(1/zoomX);};
+  zf.onclick=function(){zoomX=0;scrollX=0;redrawWaveFull();zl.textContent='Auto';};
+})();
 
 function onNotify(event){
   var bytes=new Uint8Array(event.target.value.buffer);
