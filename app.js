@@ -322,7 +322,8 @@ function dispatchFrame(type, data) {
 var waveData = [];      // Full data store
 var wavePtr = 0;        // Current write position (wraps)
 var waveW = 0, waveH = 0;
-var scrollX = 0;        // Horizontal scroll offset (pixels)
+var scrollX = 0;        // Horizontal scroll offset (sample index)
+var zoomX = 0;          // Pixels per sample (0=auto-fit)
 
 function resizeCanvas() {
   var rect = waveCanvas.parentElement.getBoundingClientRect();
@@ -338,43 +339,56 @@ function resizeCanvas() {
   redrawWaveFull();
 }
 
+function getZoom() {
+  if (zoomX > 0) return zoomX;
+  return waveData.length > waveW ? waveData.length / waveW : 1;
+}
+
 function drawWaveData(data) {
   var len = data.length;
-
-  // Always store samples first (works even when canvas is hidden)
   waveData = [];
   for (var i = 0; i < len - 1; i += 2) {
     waveData.push((data[i] << 8) | data[i + 1]);
   }
   wavePtr = waveData.length;
+  zoomX = 0; // reset to auto-fit on new data
+  scrollX = 0;
 
-  // Draw to canvas (skip if hidden, redrawWaveFull will handle on tab switch)
   if (waveW === 0 || waveH === 0) resizeCanvas();
   if (waveW === 0 || waveH === 0) return;
+  redrawWaveFull();
+  updateZoomLabel();
+}
 
+function redrawWaveFull() {
+  if (waveW === 0 || waveH === 0) return;
   ctx.fillStyle = '#06060e';
   ctx.fillRect(0, 0, waveW, waveH);
 
   // Grid
-  var yMid = Math.floor(waveH / 2);
   ctx.fillStyle = '#0e0e1a';
-  for (var gx = 0; gx < waveW; gx += 50) {
-    ctx.fillRect(gx, 0, 1, waveH);
-  }
+  for (var gx = 0; gx < waveW; gx += 50) ctx.fillRect(gx, 0, 1, waveH);
+  var yMid = Math.floor(waveH / 2);
+  for (var gy = yMid % 50; gy < waveH; gy += 50) ctx.fillRect(0, gy, waveW, 1);
 
-  // Auto-scroll to end on new data
-  scrollX = Math.max(0, waveData.length - waveW);
+  if (waveData.length === 0) { ctx.fillRect(0, yMid, waveW, 1); return; }
 
-  // Draw data as connected line
+  var z = getZoom();
+  var maxScroll = Math.max(0, waveData.length - waveW / z);
+  if (scrollX > maxScroll) scrollX = maxScroll;
+  if (scrollX < 0) scrollX = 0;
+
+  // Draw as connected line
   ctx.strokeStyle = '#0f0';
   ctx.lineWidth = 1;
   ctx.beginPath();
   var first = true;
-  for (var j = scrollX; j < waveData.length && j < scrollX + waveW; j++) {
-    var rawVal = waveData[j];
-    var y = Math.round((1 - rawVal / 4095) * (waveH - 2)) + 1;
-    if (first) { ctx.moveTo(j - scrollX, y); first = false; }
-    else ctx.lineTo(j - scrollX, y);
+  for (var px = 0; px < waveW; px++) {
+    var si = Math.floor(scrollX + px / z);
+    if (si >= waveData.length) break;
+    var y = Math.round((1 - waveData[si] / 4095) * (waveH - 2)) + 1;
+    if (first) { ctx.moveTo(px, y); first = false; }
+    else ctx.lineTo(px, y);
   }
   ctx.stroke();
 
@@ -383,60 +397,28 @@ function drawWaveData(data) {
   ctx.fillRect(0, yMid, waveW, 1);
 
   // Scroll indicator
-  if (waveData.length > waveW) {
+  var totalW = waveData.length / z;
+  if (totalW > waveW) {
     ctx.fillStyle = 'rgba(255,255,255,0.2)';
-    var barW = Math.max(20, waveW * waveW / waveData.length);
-    var barX = scrollX / (waveData.length - waveW) * (waveW - barW);
+    var barW = Math.max(20, waveW * waveW / totalW);
+    var barX = (scrollX * z / totalW) * (waveW - barW);
     ctx.fillRect(barX, waveH - 4, barW, 2);
   }
 }
 
-function redrawWaveFull() {
-  ctx.fillStyle = '#06060e';
-  ctx.fillRect(0, 0, waveW, waveH);
-
-  // Grid
-  ctx.fillStyle = '#0e0e1a';
-  for (var gx = 0; gx < waveW; gx += 50) {
-    ctx.fillRect(gx, 0, 1, waveH);
-  }
-  var yMid = Math.floor(waveH / 2);
-  for (var gy = yMid % 50; gy < waveH; gy += 50) {
-    ctx.fillRect(0, gy, waveW, 1);
-  }
-
-  // Data points as connected line
-  if (waveData.length === 0) return;
-  ctx.strokeStyle = '#0f0';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  var first = true;
-  for (var i = 0; i < waveW && scrollX + i < waveData.length; i++) {
-    var rawVal = waveData[scrollX + i] || 0;
-    var y = Math.round((1 - rawVal / 4095) * (waveH - 2)) + 1;
-    if (first) { ctx.moveTo(i, y); first = false; }
-    else ctx.lineTo(i, y);
-  }
-  ctx.stroke();
-
-  // Center line
-  ctx.fillStyle = '#0e0e1a';
-  ctx.fillRect(0, yMid, waveW, 1);
-
-  // Scroll indicator
-  if (waveData.length > waveW) {
-    ctx.fillStyle = 'rgba(255,255,255,0.2)';
-    var barW = Math.max(20, waveW * waveW / waveData.length);
-    var barX = scrollX / (waveData.length - waveW) * (waveW - barW);
-    ctx.fillRect(barX, waveH - 4, barW, 2);
-  }
+function updateZoomLabel() {
+  var el = document.getElementById('zoomLabel');
+  if (!el) return;
+  var z = getZoom();
+  if (z >= 1) el.textContent = Math.round(z) + ':1';
+  else el.textContent = '1:' + Math.round(1/z);
 }
 
 window.addEventListener('resize', function() {
   if (pageWave.classList.contains('active')) resizeCanvas();
 });
 
-// Touch/mouse drag scroll for waveform
+// Touch/mouse drag scroll for waveform (zoom-aware)
 var dragStartX = 0, dragStartScroll = 0, dragging = false;
 waveCanvas.addEventListener('pointerdown', function(e) {
   dragging = true;
@@ -446,8 +428,8 @@ waveCanvas.addEventListener('pointerdown', function(e) {
 });
 waveCanvas.addEventListener('pointermove', function(e) {
   if (!dragging) return;
-  var dx = dragStartX - e.clientX;
-  scrollX = Math.max(0, Math.min(waveData.length - waveW, dragStartScroll + dx));
+  var dx = (dragStartX - e.clientX) / getZoom();
+  scrollX = dragStartScroll + dx;
   redrawWaveFull();
 });
 waveCanvas.addEventListener('pointerup', function() { dragging = false; });
@@ -455,9 +437,54 @@ waveCanvas.addEventListener('pointerleave', function() { dragging = false; });
 
 waveCanvas.addEventListener('wheel', function(e) {
   e.preventDefault();
-  scrollX = Math.max(0, Math.min(waveData.length - waveW, scrollX + e.deltaX + e.deltaY));
+  scrollX += e.deltaY / getZoom();
   redrawWaveFull();
 }, { passive: false });
+
+// Zoom buttons
+(function() {
+  var container = document.createElement('div');
+  container.id = 'zoomControls';
+  container.style.cssText = 'position:absolute;bottom:8px;right:8px;display:flex;gap:4px;z-index:10;';
+  var zoomOut = document.createElement('button');
+  zoomOut.textContent = '-';
+  zoomOut.className = 'btn-sm';
+  var zoomLabel = document.createElement('span');
+  zoomLabel.id = 'zoomLabel';
+  zoomLabel.style.cssText = 'color:#aaa;font-size:11px;line-height:24px;min-width:36px;text-align:center;';
+  var zoomIn = document.createElement('button');
+  zoomIn.textContent = '+';
+  zoomIn.className = 'btn-sm';
+  var zoomFit = document.createElement('button');
+  zoomFit.textContent = 'Fit';
+  zoomFit.className = 'btn-sm';
+
+  container.appendChild(zoomOut);
+  container.appendChild(zoomLabel);
+  container.appendChild(zoomIn);
+  container.appendChild(zoomFit);
+
+  waveCanvas.parentElement.style.position = 'relative';
+  waveCanvas.parentElement.appendChild(container);
+
+  zoomIn.addEventListener('click', function() {
+    zoomX = (zoomX > 0 ? zoomX : getZoom()) * 1.5;
+    redrawWaveFull();
+    updateZoomLabel();
+  });
+  zoomOut.addEventListener('click', function() {
+    zoomX = (zoomX > 0 ? zoomX : getZoom()) / 1.5;
+    if (zoomX < 0.1) zoomX = 0.1;
+    redrawWaveFull();
+    updateZoomLabel();
+  });
+  zoomFit.addEventListener('click', function() {
+    zoomX = 0;
+    scrollX = 0;
+    redrawWaveFull();
+    updateZoomLabel();
+  });
+})();
 
 // ═══════════════════════════════════════════════════
 // Debug logging
