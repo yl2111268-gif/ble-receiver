@@ -338,32 +338,35 @@ function resizeCanvas() {
 }
 
 function drawWaveData(data) {
-  if (waveW === 0 || waveH === 0) resizeCanvas();
-
   var len = data.length;
 
-  // Clear entire canvas and start from x=0 each frame
-  wavePtr = 0;
+  // Always store samples first (works even when canvas is hidden)
+  waveData = [];
+  for (var i = 0; i < len - 1; i += 2) {
+    waveData.push((data[i] << 8) | data[i + 1]);
+  }
+  wavePtr = waveData.length;
+
+  // Draw to canvas (skip if hidden, redrawWaveFull will handle on tab switch)
+  if (waveW === 0 || waveH === 0) resizeCanvas();
+  if (waveW === 0 || waveH === 0) return;
+
   ctx.fillStyle = '#06060e';
   ctx.fillRect(0, 0, waveW, waveH);
 
-  // Draw grid
+  // Grid
   var yMid = Math.floor(waveH / 2);
   ctx.fillStyle = '#0e0e1a';
   for (var gx = 0; gx < waveW; gx += 50) {
     ctx.fillRect(gx, 0, 1, waveH);
   }
 
-  // Draw data points from left to right
+  // Draw data points
   ctx.fillStyle = '#0f0';
-  waveData = [];
-  for (var i = 0; i < len - 1 && i / 2 < waveW; i += 2) {
-    var x = i / 2;
-    var rawVal = (data[i] << 8) | data[i + 1];
-    waveData[x] = rawVal;
+  for (var j = 0; j < waveData.length && j < waveW; j++) {
+    var rawVal = waveData[j];
     var y = Math.round((1 - rawVal / 4095) * (waveH - 2)) + 1;
-    ctx.fillRect(x, y, 1, 1);
-    wavePtr++;
+    ctx.fillRect(j, y, 1, 1);
   }
 
   // Center line
@@ -386,14 +389,12 @@ function redrawWaveFull() {
   }
 
   // Data points
-  if (wavePtr === 0) return;
-  var start = Math.max(0, wavePtr - waveW);
+  if (waveData.length === 0) return;
   ctx.fillStyle = '#0f0';
-  for (var i = start; i < wavePtr; i++) {
-    var x = i % waveW;
+  for (var i = 0; i < waveData.length && i < waveW; i++) {
     var rawVal = waveData[i] || 0;
     var y = Math.round((1 - rawVal / 4095) * (waveH - 2)) + 1;
-    ctx.fillRect(x, y, 1, 1);
+    ctx.fillRect(i, y, 1, 1);
   }
 
   // Center line

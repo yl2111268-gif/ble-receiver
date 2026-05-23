@@ -260,15 +260,17 @@ function resizeCanvas(){
 }
 
 function drawWaveData(data){
+  waveData=[];
+  for(var i=0;i<data.length-1;i+=2)waveData.push((data[i]<<8)|data[i+1]);
+  wavePtr=waveData.length;
   if(waveW===0||waveH===0)resizeCanvas();
-  for(var i=0;i<data.length-1;i+=2){
-    var x=wavePtr%waveW,rawVal=(data[i]<<8)|data[i+1];
-    waveData[x]=rawVal;
+  if(waveW===0||waveH===0)return;
+  for(var j=0;j<waveData.length&&j<waveW;j++){
+    var x=j,rawVal=waveData[j];
     var y=Math.round((1-rawVal/4095)*(waveH-2))+1;
     ctx.fillStyle='#06060e';ctx.fillRect(x,0,1,waveH);
     if(x%50===0){ctx.fillStyle='#0e0e1a';ctx.fillRect(x,0,1,waveH);}
     ctx.fillStyle='#0f0';ctx.fillRect(x,y,1,1);
-    wavePtr++;
   }
   ctx.fillStyle='#0e0e1a';ctx.fillRect(0,Math.floor(waveH/2),waveW,1);
 }
@@ -279,11 +281,11 @@ function redrawWaveFull(){
   for(var gx=0;gx<waveW;gx+=50)ctx.fillRect(gx,0,1,waveH);
   var yMid=Math.floor(waveH/2);
   for(var gy=yMid%50;gy<waveH;gy+=50)ctx.fillRect(0,gy,waveW,1);
-  if(wavePtr===0)return;
+  if(waveData.length===0)return;
   ctx.fillStyle='#0f0';
-  for(var i=0;i<Math.min(wavePtr,waveW);i++){
-    var x=i%waveW,rawVal=waveData[i]||0;
-    ctx.fillRect(x,Math.round((1-rawVal/4095)*(waveH-2))+1,1,1);
+  for(var i=0;i<waveData.length&&i<waveW;i++){
+    var rawVal=waveData[i]||0;
+    ctx.fillRect(i,Math.round((1-rawVal/4095)*(waveH-2))+1,1,1);
   }
   ctx.fillStyle='#0e0e1a';ctx.fillRect(0,yMid,waveW,1);
 }
