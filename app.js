@@ -365,13 +365,18 @@ function drawWaveData(data) {
   // Auto-scroll to end on new data
   scrollX = Math.max(0, waveData.length - waveW);
 
-  // Draw data points
-  ctx.fillStyle = '#0f0';
+  // Draw data as connected line
+  ctx.strokeStyle = '#0f0';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  var first = true;
   for (var j = scrollX; j < waveData.length && j < scrollX + waveW; j++) {
     var rawVal = waveData[j];
     var y = Math.round((1 - rawVal / 4095) * (waveH - 2)) + 1;
-    ctx.fillRect(j - scrollX, y, 1, 1);
+    if (first) { ctx.moveTo(j - scrollX, y); first = false; }
+    else ctx.lineTo(j - scrollX, y);
   }
+  ctx.stroke();
 
   // Center line
   ctx.fillStyle = '#0e0e1a';
@@ -400,14 +405,19 @@ function redrawWaveFull() {
     ctx.fillRect(0, gy, waveW, 1);
   }
 
-  // Data points
+  // Data points as connected line
   if (waveData.length === 0) return;
-  ctx.fillStyle = '#0f0';
+  ctx.strokeStyle = '#0f0';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  var first = true;
   for (var i = 0; i < waveW && scrollX + i < waveData.length; i++) {
     var rawVal = waveData[scrollX + i] || 0;
     var y = Math.round((1 - rawVal / 4095) * (waveH - 2)) + 1;
-    ctx.fillRect(i, y, 1, 1);
+    if (first) { ctx.moveTo(i, y); first = false; }
+    else ctx.lineTo(i, y);
   }
+  ctx.stroke();
 
   // Center line
   ctx.fillStyle = '#0e0e1a';

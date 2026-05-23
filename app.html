@@ -266,13 +266,16 @@ function drawWaveData(data){
   scrollX=Math.max(0,waveData.length-waveW);
   if(waveW===0||waveH===0)resizeCanvas();
   if(waveW===0||waveH===0)return;
+  ctx.fillStyle='#06060e';ctx.fillRect(0,0,waveW,waveH);
+  ctx.fillStyle='#0e0e1a';
+  for(var gx=0;gx<waveW;gx+=50)ctx.fillRect(gx,0,1,waveH);
+  ctx.strokeStyle='#0f0';ctx.lineWidth=1;ctx.beginPath();
+  var first=true;
   for(var j=scrollX;j<waveData.length&&j<scrollX+waveW;j++){
-    var x=j-scrollX,rawVal=waveData[j];
-    var y=Math.round((1-rawVal/4095)*(waveH-2))+1;
-    ctx.fillStyle='#06060e';ctx.fillRect(x,0,1,waveH);
-    if(x%50===0){ctx.fillStyle='#0e0e1a';ctx.fillRect(x,0,1,waveH);}
-    ctx.fillStyle='#0f0';ctx.fillRect(x,y,1,1);
+    var x=j-scrollX,y=Math.round((1-waveData[j]/4095)*(waveH-2))+1;
+    if(first){ctx.moveTo(x,y);first=false;}else ctx.lineTo(x,y);
   }
+  ctx.stroke();
   ctx.fillStyle='#0e0e1a';ctx.fillRect(0,Math.floor(waveH/2),waveW,1);
 }
 
@@ -283,11 +286,13 @@ function redrawWaveFull(){
   var yMid=Math.floor(waveH/2);
   for(var gy=yMid%50;gy<waveH;gy+=50)ctx.fillRect(0,gy,waveW,1);
   if(waveData.length===0)return;
-  ctx.fillStyle='#0f0';
+  ctx.strokeStyle='#0f0';ctx.lineWidth=1;ctx.beginPath();
+  var first=true;
   for(var i=0;i<waveW&&scrollX+i<waveData.length;i++){
-    var rawVal=waveData[scrollX+i]||0;
-    ctx.fillRect(i,Math.round((1-rawVal/4095)*(waveH-2))+1,1,1);
+    var rawVal=waveData[scrollX+i]||0,y=Math.round((1-rawVal/4095)*(waveH-2))+1;
+    if(first){ctx.moveTo(i,y);first=false;}else ctx.lineTo(i,y);
   }
+  ctx.stroke();
   ctx.fillStyle='#0e0e1a';ctx.fillRect(0,yMid,waveW,1);
   if(waveData.length>waveW){
     ctx.fillStyle='rgba(255,255,255,0.2)';
