@@ -248,7 +248,7 @@ function dispatchFrame(type,data){
 }
 
 // Waveform
-var wavePtr=0,waveW=0,waveH=0;
+var wavePtr=0,waveW=0,waveH=0,scrollX=0;
 
 function resizeCanvas(){
   var rect=waveCanvas.parentElement.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
@@ -263,10 +263,11 @@ function drawWaveData(data){
   waveData=[];
   for(var i=0;i<data.length-1;i+=2)waveData.push((data[i]<<8)|data[i+1]);
   wavePtr=waveData.length;
+  scrollX=Math.max(0,waveData.length-waveW);
   if(waveW===0||waveH===0)resizeCanvas();
   if(waveW===0||waveH===0)return;
-  for(var j=0;j<waveData.length&&j<waveW;j++){
-    var x=j,rawVal=waveData[j];
+  for(var j=scrollX;j<waveData.length&&j<scrollX+waveW;j++){
+    var x=j-scrollX,rawVal=waveData[j];
     var y=Math.round((1-rawVal/4095)*(waveH-2))+1;
     ctx.fillStyle='#06060e';ctx.fillRect(x,0,1,waveH);
     if(x%50===0){ctx.fillStyle='#0e0e1a';ctx.fillRect(x,0,1,waveH);}
@@ -283,14 +284,27 @@ function redrawWaveFull(){
   for(var gy=yMid%50;gy<waveH;gy+=50)ctx.fillRect(0,gy,waveW,1);
   if(waveData.length===0)return;
   ctx.fillStyle='#0f0';
-  for(var i=0;i<waveData.length&&i<waveW;i++){
-    var rawVal=waveData[i]||0;
+  for(var i=0;i<waveW&&scrollX+i<waveData.length;i++){
+    var rawVal=waveData[scrollX+i]||0;
     ctx.fillRect(i,Math.round((1-rawVal/4095)*(waveH-2))+1,1,1);
   }
   ctx.fillStyle='#0e0e1a';ctx.fillRect(0,yMid,waveW,1);
+  if(waveData.length>waveW){
+    ctx.fillStyle='rgba(255,255,255,0.2)';
+    var barW=Math.max(20,waveW*waveW/waveData.length);
+    var barX=scrollX/(waveData.length-waveW)*(waveW-barW);
+    ctx.fillRect(barX,waveH-4,barW,2);
+  }
 }
 
 window.addEventListener('resize',function(){if(pageWave.classList.contains('active'))resizeCanvas();});
+
+var dragStartX=0,dragStartScroll=0,dragging=false;
+waveCanvas.addEventListener('pointerdown',function(e){dragging=true;dragStartX=e.clientX;dragStartScroll=scrollX;waveCanvas.setPointerCapture(e.pointerId);});
+waveCanvas.addEventListener('pointermove',function(e){if(!dragging)return;scrollX=Math.max(0,Math.min(waveData.length-waveW,dragStartScroll+dragStartX-e.clientX));redrawWaveFull();});
+waveCanvas.addEventListener('pointerup',function(){dragging=false;});
+waveCanvas.addEventListener('pointerleave',function(){dragging=false;});
+waveCanvas.addEventListener('wheel',function(e){e.preventDefault();scrollX=Math.max(0,Math.min(waveData.length-waveW,scrollX+e.deltaX+e.deltaY));redrawWaveFull();},{passive:false});
 
 function onNotify(event){
   var bytes=new Uint8Array(event.target.value.buffer);

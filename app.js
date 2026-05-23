@@ -322,6 +322,7 @@ function dispatchFrame(type, data) {
 var waveData = [];      // Full data store
 var wavePtr = 0;        // Current write position (wraps)
 var waveW = 0, waveH = 0;
+var scrollX = 0;        // Horizontal scroll offset (pixels)
 
 function resizeCanvas() {
   var rect = waveCanvas.parentElement.getBoundingClientRect();
@@ -361,17 +362,28 @@ function drawWaveData(data) {
     ctx.fillRect(gx, 0, 1, waveH);
   }
 
+  // Auto-scroll to end on new data
+  scrollX = Math.max(0, waveData.length - waveW);
+
   // Draw data points
   ctx.fillStyle = '#0f0';
-  for (var j = 0; j < waveData.length && j < waveW; j++) {
+  for (var j = scrollX; j < waveData.length && j < scrollX + waveW; j++) {
     var rawVal = waveData[j];
     var y = Math.round((1 - rawVal / 4095) * (waveH - 2)) + 1;
-    ctx.fillRect(j, y, 1, 1);
+    ctx.fillRect(j - scrollX, y, 1, 1);
   }
 
   // Center line
   ctx.fillStyle = '#0e0e1a';
   ctx.fillRect(0, yMid, waveW, 1);
+
+  // Scroll indicator
+  if (waveData.length > waveW) {
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    var barW = Math.max(20, waveW * waveW / waveData.length);
+    var barX = scrollX / (waveData.length - waveW) * (waveW - barW);
+    ctx.fillRect(barX, waveH - 4, barW, 2);
+  }
 }
 
 function redrawWaveFull() {
@@ -391,8 +403,8 @@ function redrawWaveFull() {
   // Data points
   if (waveData.length === 0) return;
   ctx.fillStyle = '#0f0';
-  for (var i = 0; i < waveData.length && i < waveW; i++) {
-    var rawVal = waveData[i] || 0;
+  for (var i = 0; i < waveW && scrollX + i < waveData.length; i++) {
+    var rawVal = waveData[scrollX + i] || 0;
     var y = Math.round((1 - rawVal / 4095) * (waveH - 2)) + 1;
     ctx.fillRect(i, y, 1, 1);
   }
@@ -400,11 +412,42 @@ function redrawWaveFull() {
   // Center line
   ctx.fillStyle = '#0e0e1a';
   ctx.fillRect(0, yMid, waveW, 1);
+
+  // Scroll indicator
+  if (waveData.length > waveW) {
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    var barW = Math.max(20, waveW * waveW / waveData.length);
+    var barX = scrollX / (waveData.length - waveW) * (waveW - barW);
+    ctx.fillRect(barX, waveH - 4, barW, 2);
+  }
 }
 
 window.addEventListener('resize', function() {
   if (pageWave.classList.contains('active')) resizeCanvas();
 });
+
+// Touch/mouse drag scroll for waveform
+var dragStartX = 0, dragStartScroll = 0, dragging = false;
+waveCanvas.addEventListener('pointerdown', function(e) {
+  dragging = true;
+  dragStartX = e.clientX;
+  dragStartScroll = scrollX;
+  waveCanvas.setPointerCapture(e.pointerId);
+});
+waveCanvas.addEventListener('pointermove', function(e) {
+  if (!dragging) return;
+  var dx = dragStartX - e.clientX;
+  scrollX = Math.max(0, Math.min(waveData.length - waveW, dragStartScroll + dx));
+  redrawWaveFull();
+});
+waveCanvas.addEventListener('pointerup', function() { dragging = false; });
+waveCanvas.addEventListener('pointerleave', function() { dragging = false; });
+
+waveCanvas.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  scrollX = Math.max(0, Math.min(waveData.length - waveW, scrollX + e.deltaX + e.deltaY));
+  redrawWaveFull();
+}, { passive: false });
 
 // ═══════════════════════════════════════════════════
 // Debug logging
