@@ -351,10 +351,10 @@ function drawWaveData(data) {
 
   // Draw data points from left to right
   ctx.fillStyle = '#0f0';
-  for (var i = 0; i < len && i < waveW; i++) {
-    var x = i;
-    var rawVal = data[i];
-    var y = Math.round((1 - rawVal / 255) * (waveH - 2)) + 1;
+  for (var i = 0; i < len - 1 && i / 2 < waveW; i += 2) {
+    var x = i / 2;
+    var rawVal = (data[i] << 8) | data[i + 1];
+    var y = Math.round((1 - rawVal / 4095) * (waveH - 2)) + 1;
     ctx.fillRect(x, y, 1, 1);
     wavePtr++;
   }
