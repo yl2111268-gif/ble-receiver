@@ -1,4 +1,4 @@
-var CACHE = 'ble-app-v8';
+var CACHE = 'ble-app-v9';
 var URLS = ['/', '/index.html', '/style.css', '/app.js', '/manifest.json'];
 
 self.addEventListener('install', function(e) {
