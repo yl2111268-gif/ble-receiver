@@ -262,7 +262,9 @@ function resizeCanvas(){
 function drawWaveData(data){
   if(waveW===0||waveH===0)resizeCanvas();
   for(var i=0;i<data.length-1;i+=2){
-    var x=wavePtr%waveW,y=Math.round((1-((data[i]<<8)|data[i+1])/4095)*(waveH-2))+1;
+    var x=wavePtr%waveW,rawVal=(data[i]<<8)|data[i+1];
+    waveData[x]=rawVal;
+    var y=Math.round((1-rawVal/4095)*(waveH-2))+1;
     ctx.fillStyle='#06060e';ctx.fillRect(x,0,1,waveH);
     if(x%50===0){ctx.fillStyle='#0e0e1a';ctx.fillRect(x,0,1,waveH);}
     ctx.fillStyle='#0f0';ctx.fillRect(x,y,1,1);
@@ -280,8 +282,8 @@ function redrawWaveFull(){
   if(wavePtr===0)return;
   ctx.fillStyle='#0f0';
   for(var i=0;i<Math.min(wavePtr,waveW);i++){
-    var x=i%waveW;
-    ctx.fillRect(x,Math.round((1-0/255)*(waveH-2))+1,1,1);
+    var x=i%waveW,rawVal=waveData[i]||0;
+    ctx.fillRect(x,Math.round((1-rawVal/4095)*(waveH-2))+1,1,1);
   }
   ctx.fillStyle='#0e0e1a';ctx.fillRect(0,yMid,waveW,1);
 }
