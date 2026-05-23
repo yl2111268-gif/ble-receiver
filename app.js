@@ -46,12 +46,17 @@ function parseSettings() {
 }
 
 function hexStrToBytes(s) {
-  s = s.replace(/\s+/g, '');
-  if (s.length % 2 !== 0) s = '0' + s;
+  var tokens = s.trim().split(/\s+/);
   var bytes = [];
-  for (var i = 0; i < s.length; i += 2) {
-    var b = parseInt(s.substring(i, i+2), 16);
-    if (!isNaN(b)) bytes.push(b);
+  for (var t = 0; t < tokens.length; t++) {
+    var val = parseInt(tokens[t], 16);
+    if (isNaN(val)) continue;
+    if (val > 0xFF) {
+      bytes.push((val >> 8) & 0xFF);
+      bytes.push(val & 0xFF);
+    } else {
+      bytes.push(val);
+    }
   }
   return bytes.length > 0 ? bytes : [0xAA, 0x55];
 }
